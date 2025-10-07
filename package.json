@@ -1,24 +1,28 @@
 {
-    "name": "@prc/related-posts",
-    "version": "1.0.0",
-    "description": "PRC Related Posts is a module for PRC Platform that...",
-    "scripts": {
-        "build": "wp-scripts build",
-        "test": "wp-scripts test-playwright",
-        "test:env:start": "wp-env start",
-        "test:env:stop": "wp-env stop",
-        "test:env:clean": "wp-env clean all && wp-env start",
-        "test:env:destroy": "wp-env destroy"
-    },
-    "devDependencies": {
-        "@playwright/test": "^1.51.1",
-        "@wordpress/e2e-test-utils-playwright": "^1.21.0",
-        "@wordpress/env": "^10.22.0",
-        "@wordpress/scripts": "^30.14.1"
-    },
-    "dependencies": {
-        "@emotion/styled": "^11.14.0",
+	"name": "@prc/related-posts",
+	"version": "1.0.0",
+	"description": "PRC Related Posts is a module for PRC Platform that...",
+	"scripts": {
+		"build": "npm run build:blocks && npm run build:inspector-panel",
+		"build:blocks": "wp-scripts build --experimental-modules --webpack-copy-php; wp-scripts build-blocks-manifest",
+		"build:inspector-panel": "wp-scripts build --source-path=includes/inspector-sidebar-panel/src --output-path=includes/inspector-sidebar-panel/build",
+		"start:blocks": "wp-scripts build-blocks-manifest; wp-scripts start --experimental-modules --webpack-copy-php",
+		"start:inspector-panel": "wp-scripts start --source-path=includes/inspector-sidebar-panel/src --output-path=includes/inspector-sidebar-panel/build",
+		"test": "wp-scripts test-playwright",
+		"test:env:start": "wp-env start",
+		"test:env:stop": "wp-env stop",
+		"test:env:clean": "wp-env clean all && wp-env start",
+		"test:env:destroy": "wp-env destroy"
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.51.1",
+		"@wordpress/e2e-test-utils-playwright": "^1.21.0",
+		"@wordpress/env": "^10.22.0",
+		"@wordpress/scripts": "^30.14.1"
+	},
+	"dependencies": {
+		"@emotion/styled": "^11.14.0",
 		"@wordpress/icons": "^10.22.0",
 		"react-movable": "^3.0.4"
-    }
+	}
 }

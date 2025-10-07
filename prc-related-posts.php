@@ -37,7 +37,7 @@ if ( ! defined( 'DEFAULT_TECHNICAL_CONTACT' ) ) {
 
 define( 'PRC_RELATED_POSTS_FILE', __FILE__ );
 define( 'PRC_RELATED_POSTS_DIR', __DIR__ );
-define( 'PRC_RELATED_POSTS_BLOCKS_DIR', __DIR__ . '/blocks' );
+define( 'PRC_RELATED_POSTS_BLOCKS_DIR', __DIR__ . '/build' );
 define( 'PRC_RELATED_POSTS_VERSION', '1.0.0' );
 
 /**

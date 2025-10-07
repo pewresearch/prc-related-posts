@@ -1,12 +1,11 @@
 # Related Posts Query
-Contributors:      Seth Rubenstein
-Tags:              block
-Tested up to:      6.1
-Stable tag:        0.1.0
-License:           GPL-2.0-or-later
-License URI:       https://www.gnu.org/licenses/gpl-2.0.html
 
-
+Contributors: Seth Rubenstein
+Tags: block
+Tested up to: 6.1
+Stable tag: 0.1.0
+License: GPL-2.0-or-later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 ## Description
 
@@ -38,7 +37,8 @@ Answer to foo bar dilemma.
 ## Changelog
 
 = 0.1.0 =
-* Release
+
+- Release
 
 ## Developer Notes
 

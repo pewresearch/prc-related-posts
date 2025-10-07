@@ -143,8 +143,8 @@ class Plugin {
 		// Load API.
 		require_once plugin_dir_path( __DIR__ ) . '/includes/class-api.php';
 
-		// Load blocks.
-		require_once plugin_dir_path( __DIR__ ) . '/blocks/class-blocks.php';
+		// Load block classes.
+		require_once plugin_dir_path( __DIR__ ) . '/build/related-posts-query/class-related-posts-query.php';
 	}
 
 	/**
@@ -159,8 +159,12 @@ class Plugin {
 		$this->loader->add_action( 'wpcom_vip_cache_pre_execute_purges', $this, 'clear_cache_on_purge' );
 		$this->loader->add_action( 'prc_platform_on_update', $this, 'clear_cache_on_update' );
 
-		// Initialize the blocks.
-		new Blocks( $this->get_loader() );
+		// Initialize the block.
+		wp_register_block_metadata_collection(
+			plugin_dir_path( __DIR__ ) . 'build',
+			plugin_dir_path( __DIR__ ) . 'build/blocks-manifest.php'
+		);
+		new Related_Posts_Query( $this->get_loader() );
 	}
 
 	/**

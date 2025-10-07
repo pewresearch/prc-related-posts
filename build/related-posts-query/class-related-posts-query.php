@@ -101,7 +101,7 @@ class Related_Posts_Query {
 	 */
 	public function block_init() {
 		register_block_type_from_metadata(
-			PRC_RELATED_POSTS_BLOCKS_DIR . '/build/related-posts-query',
+			PRC_RELATED_POSTS_BLOCKS_DIR . '/related-posts-query',
 			array(
 				'render_callback' => array( $this, 'render_block_callback' ),
 			)
