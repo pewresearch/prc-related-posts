@@ -89,7 +89,10 @@ class API {
 		if ( false !== $related_posts ) {
 			return $related_posts;
 		}
-		$primary_taxonomy_term_id = \PRC\Platform\get_primary_term_id( 'category', $this->ID );
+		$primary_taxonomy_term_id = \PRC\Platform\get_primary_term_id( $post_id, 'category' );
+		if ( false === $primary_taxonomy_term_id || ! is_numeric( $primary_taxonomy_term_id ) ) {
+			return $related_posts;
+		}
 		$primary_taxonomy_term    = get_term_by( 'term_taxonomy_id', (int) $primary_taxonomy_term_id, 'category' );
 		$section                  = $primary_taxonomy_term->name;
 		// Query Parsely for related posts for this post by url by post id and by primary topic term/section name.
@@ -139,7 +142,11 @@ class API {
 		$related_posts = array();
 
 		// Get the primary topic for this post.
-		$primary_taxonomy_term_id = \PRC\Platform\get_primary_term_id( $taxonomy, $this->ID );
+		$primary_taxonomy_term_id = \PRC\Platform\get_primary_term_id( $this->ID, $taxonomy );
+		if ( false === $primary_taxonomy_term_id || ! is_numeric( $primary_taxonomy_term_id ) ) {
+			return $related_posts;
+		}
+
 		$primary_taxonomy_term    = get_term_by( 'term_taxonomy_id', (int) $primary_taxonomy_term_id, $taxonomy );
 
 		if ( ! $primary_taxonomy_term ) {

@@ -21,6 +21,20 @@ import { PluginDocumentSettingPanel } from '@wordpress/edit-post';
 import './store';
 import ListStoreItem from './list-store-item';
 
+/**
+ * Conditionally load the AI Suggest Button component.
+ * The prcRelatedPostsAI global is localized by the Related Posts AI Experiment
+ * when the experiment is enabled in the WP AI Experiments plugin settings.
+ */
+const isAIEnabled =
+	typeof window !== 'undefined' &&
+	typeof window.prcRelatedPostsAI !== 'undefined' &&
+	window.prcRelatedPostsAI.enabled;
+// Lazy import only when the experiment is enabled.
+const SEOSuggestButton = isAIEnabled
+	? require('./ai-suggest-button').default
+	: null;
+
 function randomId() {
 	// Math.random should be unique because of its seeding algorithm.
 	// Convert it to base 36 (numbers + letters), and grab the first 9 characters
@@ -39,20 +53,26 @@ function RelatedPostsPanel() {
 		[]
 	);
 
-	const [meta, setMeta] = useEntityProp('postType', postType, 'meta');
+	const [, setMeta] = useEntityProp('postType', postType, 'meta');
 
+	// Sync list store (items) to post meta. Use functional setMeta so we don't
+	// depend on meta in deps — otherwise setMeta triggers effect again → infinite loop (React #185).
 	useEffect(() => {
-		if (0 !== items.length) {
-			console.log('<RelatedPostsPanel> Meta Save...', items);
-			setMeta({ ...meta, relatedPosts: items });
-		}
-	}, [items]);
+		if (items.length === 0) return;
+		setMeta((prev) => ({ ...prev, relatedPosts: items }));
+	}, [items, setMeta]);
 
 	return (
 		<PluginDocumentSettingPanel
 			name="prc-related-posts"
 			title="Related Posts"
 		>
+			{SEOSuggestButton && (
+				<>
+					<SEOSuggestButton />
+					<div style={{ marginTop: '12px' }} />
+				</>
+			)}
 			<WPEntitySearch
 				placeholder={__(
 					'Enter URL or search for a related post',

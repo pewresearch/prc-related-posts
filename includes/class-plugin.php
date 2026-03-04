@@ -145,6 +145,12 @@ class Plugin {
 
 		// Load block classes.
 		require_once plugin_dir_path( __DIR__ ) . '/build/related-posts-query/class-related-posts-query.php';
+
+		// Load the AI experiment and ability classes if the WP AI plugin is available.
+		if ( class_exists( '\WordPress\AI\Abstracts\Abstract_Experiment' ) ) {
+			require_once plugin_dir_path( __DIR__ ) . '/includes/ai-experiment/class-related-posts-ai-ability.php';
+			require_once plugin_dir_path( __DIR__ ) . '/includes/ai-experiment/class-related-posts-ai-experiment.php';
+		}
 	}
 
 	/**
@@ -154,6 +160,7 @@ class Plugin {
 	 * @access   private
 	 */
 	private function init_dependencies() {
+		$this->loader->add_action( 'init', $this, 'register_default_post_type_support', 5 );
 		$this->loader->add_action( 'init', $this, 'register_meta_fields' );
 		$this->loader->add_action( 'enqueue_block_editor_assets', $this, 'enqueue_assets' );
 		$this->loader->add_action( 'wpcom_vip_cache_pre_execute_purges', $this, 'clear_cache_on_purge' );
@@ -165,6 +172,25 @@ class Plugin {
 			plugin_dir_path( __DIR__ ) . 'build/blocks-manifest.php'
 		);
 		new Related_Posts_Query( $this->get_loader() );
+
+		// Register the AI experiment with the WP AI Experiments plugin.
+		if ( class_exists( '\WordPress\AI\Abstracts\Abstract_Experiment' ) ) {
+			add_action(
+				'ai_experiments_register_experiments',
+				function ( $registry ) {
+					$registry->register_experiment( new Related_Posts_AI_Experiment() );
+				}
+			);
+		}
+	}
+
+	/**
+	 * Register default post type support for related posts.
+	 *
+	 * @hook init
+	 */
+	public function register_default_post_type_support() {
+		add_post_type_support( 'post', 'prc-related-posts' );
 	}
 
 	/**
@@ -175,7 +201,19 @@ class Plugin {
 	 * @return   array
 	 */
 	public static function get_enabled_post_types() {
-		return apply_filters( 'prc_platform__related_posts_enabled_post_types', array( 'post' ) );
+		$post_types         = get_post_types( array( 'public' => true ), 'names' );
+		$supported_types    = array_values(
+			array_filter(
+				$post_types,
+				function ( $pt ) {
+					return post_type_supports( $pt, 'prc-related-posts' );
+				}
+			)
+		);
+		// Maintain backward compatibility with filter.
+		$filter_types       = apply_filters( 'prc_platform__related_posts_enabled_post_types', array() );
+		$enabled_post_types = array_unique( array_merge( $supported_types, $filter_types ) );
+		return array_values( $enabled_post_types );
 	}
 
 	/**
