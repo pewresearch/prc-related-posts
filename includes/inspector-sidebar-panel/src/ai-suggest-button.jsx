@@ -147,7 +147,7 @@ export default function SEOSuggestButton() {
 				onClose={() => setIsOpen(false)}
 				isLoading={isLoading}
 				loadingMessage={__(
-					'Analyzing categories and finding related posts…',
+					'Analyzing topics and finding related posts…',
 					'prc-related-posts'
 				)}
 				error={error}
