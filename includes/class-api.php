@@ -68,7 +68,7 @@ class API {
 		// Construct Label from post terms.
 		$terms = wp_get_object_terms( $post_id, 'formats', array( 'fields' => 'names' ) );
 		$label = 'Report';
-		if ( ! is_wp_error( $terms ) || ! empty( $terms ) ) {
+		if ( ! is_wp_error( $terms ) && ! empty( $terms ) ) {
 			$label = array_shift( $terms );
 		}
 		if ( null === $label ) {
@@ -150,9 +150,8 @@ class API {
 		$primary_taxonomy_term    = get_term_by( 'term_taxonomy_id', (int) $primary_taxonomy_term_id, $taxonomy );
 
 		if ( ! $primary_taxonomy_term ) {
-			// Get the first term for this post.
 			$terms = wp_get_post_terms( $this->ID, $taxonomy );
-			if ( ! empty( $terms ) ) {
+			if ( ! is_wp_error( $terms ) && ! empty( $terms ) ) {
 				$primary_taxonomy_term = $terms[0];
 			}
 		}
