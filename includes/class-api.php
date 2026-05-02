@@ -78,58 +78,6 @@ class API {
 	}
 
 	/**
-	 * Get the related posts from Parsely.
-	 *
-	 * @param int $post_id The post ID.
-	 * @return array
-	 */
-	private function get_related_posts_from_parsely( $post_id ) {
-		// Check cache for related posts.
-		$related_posts = wp_cache_get( $post_id, 'parsely_related_posts' );
-		if ( false !== $related_posts ) {
-			return $related_posts;
-		}
-		$primary_taxonomy_term_id = \PRC\Platform\get_primary_term_id( $post_id, 'category' );
-		if ( false === $primary_taxonomy_term_id || ! is_numeric( $primary_taxonomy_term_id ) ) {
-			return $related_posts;
-		}
-		$primary_taxonomy_term    = get_term_by( 'term_taxonomy_id', (int) $primary_taxonomy_term_id, 'category' );
-		$section                  = $primary_taxonomy_term->name;
-		// Query Parsely for related posts for this post by url by post id and by primary topic term/section name.
-		$related_posts = array();
-		$api_url       = 'https://api.parsely.com/v2/related?apikey=pewresearch.org&section=' . $section . 'url=' . get_permalink( $post_id );
-		$response      = \vip_safe_wp_remote_get( $api_url );
-		if ( is_wp_error( $response ) ) {
-			return $related_posts;
-		}
-
-		$body = wp_remote_retrieve_body( $response );
-		$data = json_decode( $body, true );
-		if ( ! is_array( $data ) || empty( $data ) ) {
-			return $related_posts;
-		}
-
-		$related_posts = array_map(
-			function ( $item ) {
-				return array(
-					'postId'   => $item['post_id'],
-					'postType' => get_post_type( $item['post_id'] ),
-					'url'      => get_permalink( $item['post_id'] ),
-					'title'    => $item['title'],
-					'date'     => $item['pub_date'],
-					'excerpt'  => $item['excerpt'],
-					'label'    => $this->get_label( $item['post_id'] ),
-				);
-			},
-			$data
-		);
-
-		// Store the related posts for 1 day.
-		wp_cache_set( $post_id, $related_posts, 'parsely_related_posts', 1 * DAY_IN_SECONDS );
-		return $related_posts;
-	}
-
-	/**
 	 * Get the posts with matching primary terms.
 	 *
 	 * @param int  $posts_per_page The number of posts per page.
@@ -142,12 +90,12 @@ class API {
 		$related_posts = array();
 
 		// Get the primary topic for this post.
-		$primary_taxonomy_term_id = \PRC\Platform\get_primary_term_id( $this->ID, $taxonomy );
+		$primary_taxonomy_term_id = \PRC\BlockUtils\get_primary_term_id( $this->ID, $taxonomy );
 		if ( false === $primary_taxonomy_term_id || ! is_numeric( $primary_taxonomy_term_id ) ) {
 			return $related_posts;
 		}
 
-		$primary_taxonomy_term    = get_term_by( 'term_taxonomy_id', (int) $primary_taxonomy_term_id, $taxonomy );
+		$primary_taxonomy_term = get_term_by( 'term_taxonomy_id', (int) $primary_taxonomy_term_id, $taxonomy );
 
 		if ( ! $primary_taxonomy_term ) {
 			$terms = wp_get_post_terms( $this->ID, $taxonomy );

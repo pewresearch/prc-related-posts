@@ -1,14 +1,15 @@
-
 /**
  * External Dependencies
  */
-import { InnerBlocksAsContextTemplate, getInnerBlocksContextAsQuery } from '@prc/components';
-import { getBlockGapSupportValue } from '@prc/block-utils';
+import {
+	InnerBlocksAsContextTemplate,
+	useInnerBlocksContextAsQuery,
+} from '@prc/components';
+import { getBlockGapSupportValue } from '@prc/functions';
 
 /**
  * WordPress Dependencies
  */
-import { __ } from '@wordpress/i18n';
 import { useBlockProps } from '@wordpress/block-editor';
 
 const ALLOWED_BLOCKS = [
@@ -16,32 +17,36 @@ const ALLOWED_BLOCKS = [
 	'core/post-title',
 	'core/post-date',
 	'core/post-excerpt',
-]
-
-const TEMPLATE = [
-	['prc-block/story-item'],
 ];
 
-export default function Edit({ clientId, context, attributes, setAttributes }) {
+const TEMPLATE = [['prc-block/story-item']];
+
+export default function Edit({ clientId, attributes }) {
 	const { perPage } = attributes;
 
 	const blockProps = useBlockProps({
 		style: {
-			'gap': getBlockGapSupportValue(attributes),
+			gap: getBlockGapSupportValue(attributes),
 		},
 	});
 
-	const {blockContexts, isResolving} = getInnerBlocksContextAsQuery('post', perPage);
+	const { blockContexts, isResolving } = useInnerBlocksContextAsQuery(
+		'post',
+		perPage
+	);
 
 	return (
-		<div {...blockProps}>
-			<InnerBlocksAsContextTemplate {...{
+		<InnerBlocksAsContextTemplate
+			{...{
 				clientId,
 				allowedBlocks: ALLOWED_BLOCKS,
 				template: TEMPLATE,
 				blockContexts,
 				isResolving,
-			}}/>
-		</div>
+				wrapperProps: {
+					...blockProps,
+				},
+			}}
+		/>
 	);
 }

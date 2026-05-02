@@ -10,7 +10,6 @@
 
 namespace PRC\Platform\Related_Posts;
 
-use WordPress\AiClient\AiClient;
 use WP_Query;
 
 // If this file is called directly, abort.
@@ -116,6 +115,11 @@ class Related_Posts_AI_Ability {
 							'type'        => 'integer',
 							'description' => 'How many candidate posts were found before AI ranking.',
 						),
+						'source'          => array(
+							'type'        => 'string',
+							'enum'        => array( 'parsely', 'category-query' ),
+							'description' => 'The source of the recommendations.',
+						),
 					),
 				),
 				'execute_callback'    => array( $this, 'find_related_posts' ),
@@ -124,7 +128,7 @@ class Related_Posts_AI_Ability {
 				},
 				'meta'                => array(
 					'annotations'  => array(
-						'instructions' => 'This ability takes a post ID, retrieves its categories, finds up to 15 candidate posts sharing those categories, and uses AI to select and rank the top 5 most relevant suggestions. The result includes the reasoning for each suggestion.',
+						'instructions' => 'This ability takes a post ID. For published posts it requests Parse.ly content recommendations when configured; otherwise it finds up to 15 candidate posts sharing the post\'s categories and uses AI to select and rank the top 5 most relevant suggestions. The result includes the reasoning for each suggestion and a source field.',
 						'readonly'     => true,
 						'destructive'  => false,
 						'idempotent'   => false,
@@ -173,8 +177,8 @@ class Related_Posts_AI_Ability {
 
 		// First, try to find posts that share the primary category.
 		$primary_category_id = null;
-		if ( function_exists( '\PRC\Platform\get_primary_term_id' ) ) {
-			$primary_category_id = \PRC\Platform\get_primary_term_id( $post_id, 'category' );
+		if ( function_exists( '\PRC\BlockUtils\get_primary_term_id' ) ) {
+			$primary_category_id = \PRC\BlockUtils\get_primary_term_id( $post_id, 'category' );
 		}
 
 		$candidates = array();
@@ -340,14 +344,28 @@ Each item must include the exact postId from the candidates and a brief reason f
 		);
 
 		try {
-			$response = AiClient::prompt( $prompt )
-				->usingSystemInstruction( self::get_ranking_instructions() )
-				->usingTemperature( 0.2 )
-				->usingModelPreference( array( 'claude-haiku-4-5', 'gemini-2.5-flash' ) )
-				->asJsonResponse()
-				->generateText();
+			$builder = wp_ai_client_prompt( $prompt );
+			if ( is_wp_error( $builder ) ) {
+				return array();
+			}
 
-			$ranked = json_decode( $response, true );
+			$response = $builder
+				->using_system_instruction( self::get_ranking_instructions() )
+				->using_temperature( 0.2 )
+				->using_model_preference( 'claude-haiku-4-5', 'gemini-2.5-flash' )
+				->as_json_response(
+					array(
+						'type'  => 'array',
+						'items' => array( 'type' => 'object' ),
+					)
+				)
+				->generate_text();
+
+			if ( is_wp_error( $response ) ) {
+				return array();
+			}
+
+			$ranked = json_decode( (string) $response, true );
 
 			if ( json_last_error() !== JSON_ERROR_NONE || ! is_array( $ranked ) ) {
 				return array();
@@ -357,6 +375,161 @@ Each item must include the exact postId from the candidates and a brief reason f
 		} catch ( \Exception $e ) {
 			return array();
 		}
+	}
+
+	/**
+	 * Resolve a front-end URL to a post ID (VIP-aware).
+	 *
+	 * @param string $url URL to resolve.
+	 * @return int Post ID or 0.
+	 */
+	private function resolve_url_to_post_id( string $url ): int {
+		if ( function_exists( 'wpcom_vip_url_to_postid' ) ) {
+			return (int) wpcom_vip_url_to_postid( $url );
+		}
+		return (int) url_to_postid( $url );
+	}
+
+	/**
+	 * Primary category (section) name for optional Parse.ly filtering.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return string|null Section name or null.
+	 */
+	private function get_primary_section_name( int $post_id ): ?string {
+		if ( ! function_exists( '\PRC\BlockUtils\get_primary_term_id' ) ) {
+			return null;
+		}
+		$primary_taxonomy_term_id = \PRC\BlockUtils\get_primary_term_id( $post_id, 'category' );
+		if ( false === $primary_taxonomy_term_id || ! is_numeric( $primary_taxonomy_term_id ) ) {
+			return null;
+		}
+		$term = get_term_by( 'term_taxonomy_id', (int) $primary_taxonomy_term_id, 'category' );
+		if ( ! $term || is_wp_error( $term ) ) {
+			return null;
+		}
+		return $term->name;
+	}
+
+	/**
+	 * Fetch related post recommendations from Parse.ly (published content only).
+	 *
+	 * @param int $post_id Post ID.
+	 * @return array List of suggestion arrays, empty on failure or misconfiguration.
+	 */
+	private function get_parsely_recommendations( int $post_id ): array {
+		if ( ! defined( 'PRC_PLATFORM_PARSELY_API_KEY' ) || '' === constant( 'PRC_PLATFORM_PARSELY_API_KEY' ) ) {
+			return array();
+		}
+
+		$cache_key = 'parsely_suggest_' . $post_id;
+		$cached    = wp_cache_get( $cache_key, 'prc_related_posts' );
+		if ( false !== $cached && is_array( $cached ) ) {
+			return $cached;
+		}
+
+		$permalink = get_permalink( $post_id );
+		if ( ! $permalink ) {
+			return array();
+		}
+
+		$normalized_url = \PRC\BlockUtils\normalize_url_to_production( $permalink );
+		$api_key        = constant( 'PRC_PLATFORM_PARSELY_API_KEY' );
+
+		$params = array(
+			'apikey' => $api_key,
+			'url'    => $normalized_url,
+			'limit'  => 10,
+			'sort'   => '_score',
+		);
+
+		$section = $this->get_primary_section_name( $post_id );
+		if ( $section ) {
+			$params['section'] = $section;
+		}
+
+		$api_url = add_query_arg( $params, 'https://api.parsely.com/v2/related' );
+
+		$request_args = array(
+			'timeout' => 15,
+			'headers' => array(
+				'Accept' => 'application/json',
+			),
+		);
+
+		if ( function_exists( 'vip_safe_wp_remote_get' ) ) {
+			$response = \vip_safe_wp_remote_get(
+				$api_url,
+				'',
+				3,
+				15,
+				20,
+				array(
+					'headers' => array(
+						'Accept' => 'application/json',
+					),
+				)
+			);
+		} else {
+			// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_get_wp_remote_get -- Fallback when VIP function unavailable (e.g. local Playground).
+			$response = wp_remote_get( $api_url, $request_args );
+		}
+
+		if ( is_wp_error( $response ) ) {
+			return array();
+		}
+
+		$code = wp_remote_retrieve_response_code( $response );
+		$body = wp_remote_retrieve_body( $response );
+		if ( 200 !== $code || '' === $body ) {
+			return array();
+		}
+
+		$decoded = json_decode( $body, true );
+		if ( ! is_array( $decoded ) || empty( $decoded['data'] ) || ! is_array( $decoded['data'] ) ) {
+			return array();
+		}
+
+		$reason_base = $section
+			/* translators: %s: Primary section (category) name. */
+			? sprintf( __( 'Recommended by Parse.ly — related content in %s.', 'prc-related-posts' ), $section )
+			: __( 'Recommended by Parse.ly.', 'prc-related-posts' );
+
+		$suggestions = array();
+		foreach ( $decoded['data'] as $item ) {
+			if ( count( $suggestions ) >= 5 ) {
+				break;
+			}
+			if ( empty( $item['url'] ) || ! is_string( $item['url'] ) ) {
+				continue;
+			}
+			$resolved_id = $this->resolve_url_to_post_id( $item['url'] );
+			if ( $resolved_id <= 0 || $resolved_id === $post_id ) {
+				continue;
+			}
+			$title = isset( $item['title'] ) ? (string) $item['title'] : get_the_title( $resolved_id );
+			$date  = '';
+			if ( ! empty( $item['pub_date'] ) ) {
+				$ts   = strtotime( (string) $item['pub_date'] );
+				$date = $ts ? gmdate( 'Y-m-d', $ts ) : '';
+			}
+			if ( '' === $date ) {
+				$date = get_the_date( 'Y-m-d', $resolved_id );
+			}
+
+			$suggestions[] = array(
+				'postId' => $resolved_id,
+				'title'  => $title,
+				'url'    => get_permalink( $resolved_id ),
+				'date'   => $date,
+				'label'  => $this->get_label( $resolved_id ),
+				'reason' => $reason_base,
+			);
+		}
+
+		wp_cache_set( $cache_key, $suggestions, 'prc_related_posts', HOUR_IN_SECONDS );
+
+		return $suggestions;
 	}
 
 	/**
@@ -399,13 +572,9 @@ Each item must include the exact postId from the candidates and a brief reason f
 			);
 		}
 
-		// Get the post's categories.
 		$categories = wp_get_post_terms( $post_id, 'category' );
-		if ( is_wp_error( $categories ) || empty( $categories ) ) {
-			return array(
-				'error'       => 'No categories found for this post. Categories are required to find related content.',
-				'suggestions' => array(),
-			);
+		if ( is_wp_error( $categories ) ) {
+			$categories = array();
 		}
 
 		$category_names = wp_list_pluck( $categories, 'name' );
@@ -416,7 +585,28 @@ Each item must include the exact postId from the candidates and a brief reason f
 			'categories' => $category_names,
 		);
 
-		// Get up to 15 candidate posts.
+		// Published posts: try Parse.ly first (canonical URL in index).
+		if ( 'publish' === get_post_status( $post_id ) ) {
+			$parsely_suggestions = $this->get_parsely_recommendations( $post_id );
+			if ( ! empty( $parsely_suggestions ) ) {
+				return array(
+					'error'           => '',
+					'suggestions'     => $parsely_suggestions,
+					'source_post'     => $source_post,
+					'candidate_count' => count( $parsely_suggestions ),
+					'source'          => 'parsely',
+				);
+			}
+		}
+
+		if ( empty( $categories ) ) {
+			return array(
+				'error'       => 'No categories found for this post. Categories are required to find related content.',
+				'suggestions' => array(),
+			);
+		}
+
+		// Draft / pending / fallback: category query and optional AI ranking.
 		$candidates = $this->get_candidate_posts( $post_id, $categories );
 
 		if ( empty( $candidates ) ) {
@@ -425,6 +615,7 @@ Each item must include the exact postId from the candidates and a brief reason f
 				'suggestions'     => array(),
 				'source_post'     => $source_post,
 				'candidate_count' => 0,
+				'source'          => 'category-query',
 			);
 		}
 
@@ -446,6 +637,7 @@ Each item must include the exact postId from the candidates and a brief reason f
 				'suggestions'     => $suggestions,
 				'source_post'     => $source_post,
 				'candidate_count' => $candidate_count,
+				'source'          => 'category-query',
 			);
 		}
 
@@ -469,6 +661,7 @@ Each item must include the exact postId from the candidates and a brief reason f
 				'suggestions'     => $suggestions,
 				'source_post'     => $source_post,
 				'candidate_count' => $candidate_count,
+				'source'          => 'category-query',
 			);
 		}
 
@@ -497,6 +690,7 @@ Each item must include the exact postId from the candidates and a brief reason f
 			'suggestions'     => $suggestions,
 			'source_post'     => $source_post,
 			'candidate_count' => $candidate_count,
+			'source'          => 'category-query',
 		);
 	}
 }

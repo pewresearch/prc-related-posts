@@ -7,13 +7,14 @@ import {
 	AISuggestModal,
 	AISuggestionsList,
 } from '@prc/components';
+import styled from '@emotion/styled';
 
 /**
  * WordPress Dependencies
  */
 import { __, sprintf } from '@wordpress/i18n';
 import { useState, useCallback, useMemo, useEffect } from '@wordpress/element';
-import { useSelect, useDispatch } from '@wordpress/data';
+import { useSelect } from '@wordpress/data';
 import { Button } from '@wordpress/components';
 
 /**
@@ -25,28 +26,30 @@ function randomId() {
 	return `_${Math.random().toString(36).substr(2, 9)}`;
 }
 
+const AISuggestButtonContainer = styled.div`
+	margin-bottom: 1em;
+`;
+
 /**
  * AI Suggest Button component.
  *
  * Renders a button that triggers an AI-powered related posts suggestion,
  * displays results in a modal, and allows the editor to insert selected items.
+ *
+ * @param {Object}   props               Component props.
+ * @param {Function} props.append        Callback to append an item to the related posts list.
+ * @param {Array}    props.existingItems Current related posts items (from meta.relatedPosts).
  */
-export default function SEOSuggestButton() {
+export default function SEOSuggestButton({ append, existingItems = [] }) {
 	const [isOpen, setIsOpen] = useState(false);
 	const [selectedIds, setSelectedIds] = useState(new Set());
 
-	const { append } = useDispatch('prc/related-posts');
-
-	const { postId, postType } = useSelect(
+	const { postId, postType, postStatus } = useSelect(
 		(select) => ({
 			postId: select('core/editor').getCurrentPostId(),
 			postType: select('core/editor').getCurrentPostType(),
+			postStatus: select('core/editor').getCurrentPostAttribute('status'),
 		}),
-		[]
-	);
-
-	const existingItems = useSelect(
-		(select) => select('prc/related-posts').getItems(),
 		[]
 	);
 
@@ -56,47 +59,42 @@ export default function SEOSuggestButton() {
 	const { isLoading, error, result, fetch, dismissError } = useAISuggest({
 		abilityName,
 		transformResult: (raw) => {
-			if (!raw.suggestions || raw.suggestions.length === 0) {
-				return [];
-			}
-			// Filter out suggestions that are already in the related posts list.
 			const existingPostIds = new Set(
 				existingItems.map((item) => item.postId)
 			);
-			return raw.suggestions.filter(
+			const filtered = (raw.suggestions || []).filter(
 				(s) => !existingPostIds.has(s.postId)
 			);
+			return {
+				suggestions: filtered,
+				source: raw.source ?? 'category-query',
+			};
 		},
 	});
 
-	/**
-	 * Opens the modal and triggers the AI suggestion fetch.
-	 */
 	const handleOpen = useCallback(() => {
 		setIsOpen(true);
 		setSelectedIds(new Set());
-		fetch({ post_id: postId }).then(() => {
-			// After fetch completes, if we have results select all by default.
-			// This is handled via the effect-like pattern below.
-		});
+		fetch({ post_id: postId });
 	}, [fetch, postId]);
 
-	// Stabilise the suggestions reference so downstream hooks don't
-	// re-fire on every render.
-	const suggestions = useMemo(() => result || [], [result]);
+	const suggestions = useMemo(() => result?.suggestions ?? [], [result]);
+	const suggestionSource = result?.source ?? 'category-query';
 
-	// Select all suggestions by default when results arrive.
+	const loadingMessage =
+		postStatus === 'publish'
+			? __('Fetching recommendations from Parse.ly…', 'prc-related-posts')
+			: __(
+					'Analyzing topics and finding related posts…',
+					'prc-related-posts'
+			  );
+
 	useEffect(() => {
 		if (suggestions.length > 0 && !isLoading) {
 			setSelectedIds(new Set(suggestions.map((s) => s.postId)));
 		}
 	}, [suggestions, isLoading]);
 
-	/**
-	 * Toggles a suggestion's selection state.
-	 *
-	 * @param {number} suggestionPostId The post ID to toggle.
-	 */
 	const toggleSelection = useCallback((suggestionPostId) => {
 		setSelectedIds((prev) => {
 			const next = new Set(prev);
@@ -109,25 +107,20 @@ export default function SEOSuggestButton() {
 		});
 	}, []);
 
-	/**
-	 * Inserts the selected suggestions into the related posts list.
-	 */
 	const handleInsert = useCallback(() => {
 		const selected = suggestions.filter((s) => selectedIds.has(s.postId));
-		selected.forEach((suggestion) => {
-			append({
-				key: randomId(),
-				link: suggestion.url,
-				postId: suggestion.postId,
-				title: suggestion.title,
-				date: suggestion.date,
-				label: suggestion.label,
-			});
-		});
+		const items = selected.map((suggestion) => ({
+			key: randomId(),
+			link: suggestion.url,
+			postId: suggestion.postId,
+			title: suggestion.title,
+			date: suggestion.date,
+			label: suggestion.label,
+		}));
+		append(...items);
 		setIsOpen(false);
 	}, [suggestions, selectedIds, append]);
 
-	// Check if the current post type supports related posts.
 	const enabledPostTypes = window.prcRelatedPostsAI?.enabledPostTypes || [];
 	if (!enabledPostTypes.includes(postType)) {
 		return null;
@@ -135,21 +128,20 @@ export default function SEOSuggestButton() {
 
 	return (
 		<>
-			<AISuggestButton
-				label={__('Suggest Related Posts', 'prc-related-posts')}
-				text={__('Suggest Related Posts', 'prc-related-posts')}
-				onClick={handleOpen}
-			/>
+			<AISuggestButtonContainer>
+				<AISuggestButton
+					label={__('Suggest Related Posts', 'prc-related-posts')}
+					text={__('Suggest Related Posts', 'prc-related-posts')}
+					onClick={handleOpen}
+				/>
+			</AISuggestButtonContainer>
 
 			<AISuggestModal
 				title={__('Related Posts Suggestions', 'prc-related-posts')}
 				isOpen={isOpen}
 				onClose={() => setIsOpen(false)}
 				isLoading={isLoading}
-				loadingMessage={__(
-					'Analyzing topics and finding related posts…',
-					'prc-related-posts'
-				)}
+				loadingMessage={loadingMessage}
 				error={error}
 				onDismissError={dismissError}
 				footer={
@@ -193,6 +185,50 @@ export default function SEOSuggestButton() {
 								'prc-related-posts'
 							)}
 						</p>
+						{suggestionSource === 'parsely' && (
+							<p
+								style={{
+									fontSize: '12px',
+									color: '#757575',
+									margin: '0 0 12px',
+								}}
+							>
+								<span
+									style={{
+										display: 'inline-block',
+										backgroundColor: '#f0f0f0',
+										border: '1px solid #ddd',
+										padding: '2px 8px',
+										borderRadius: '2px',
+										fontSize: '11px',
+										fontWeight: 600,
+									}}
+								>
+									{__(
+										'Powered by Parse.ly',
+										'prc-related-posts'
+									)}
+								</span>
+							</p>
+						)}
+						{suggestionSource === 'category-query' &&
+							postStatus !== 'publish' && (
+								<p
+									style={{
+										fontSize: '12px',
+										color: '#1e1e1e',
+										backgroundColor: '#f0f6fc',
+										borderLeft: '4px solid #0969da',
+										padding: '8px 8px 8px 12px',
+										margin: '0 0 12px',
+									}}
+								>
+									{__(
+										'This post is not yet published. Suggestions are based on category matching. Once published, recommendations will be powered by Parse.ly.',
+										'prc-related-posts'
+									)}
+								</p>
+							)}
 						<AISuggestionsList
 							suggestions={suggestions}
 							selectedIds={selectedIds}
@@ -205,7 +241,6 @@ export default function SEOSuggestButton() {
 									</span>
 									<div
 										style={{
-											marginLeft: '28px',
 											fontSize: '12px',
 											color: '#666',
 										}}

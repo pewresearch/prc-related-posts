@@ -9,16 +9,14 @@ import { List } from 'react-movable';
  * WordPress Dependencies
  */
 import { __ } from '@wordpress/i18n';
-import { useEffect } from '@wordpress/element';
+import { useRef, useCallback } from '@wordpress/element';
 import { registerPlugin } from '@wordpress/plugins';
 import { useDispatch, useSelect } from '@wordpress/data';
-import { useEntityProp } from '@wordpress/core-data';
 import { PluginDocumentSettingPanel } from '@wordpress/edit-post';
 
 /**
  * Internal Dependencies
  */
-import './store';
 import ListStoreItem from './list-store-item';
 
 /**
@@ -30,37 +28,85 @@ const isAIEnabled =
 	typeof window !== 'undefined' &&
 	typeof window.prcRelatedPostsAI !== 'undefined' &&
 	window.prcRelatedPostsAI.enabled;
-// Lazy import only when the experiment is enabled.
 const SEOSuggestButton = isAIEnabled
 	? require('./ai-suggest-button').default
 	: null;
 
 function randomId() {
-	// Math.random should be unique because of its seeding algorithm.
-	// Convert it to base 36 (numbers + letters), and grab the first 9 characters
-	// after the decimal.
 	return `_${Math.random().toString(36).substr(2, 9)}`;
 }
 
 function RelatedPostsPanel() {
-	const { append, reorder } = useDispatch('prc/related-posts');
+	const { editPost } = useDispatch('core/editor');
 
-	const { items, postType } = useSelect(
-		(select) => ({
-			items: select('prc/related-posts').getItems(),
-			postType: select('core/editor').getCurrentPostType(),
-		}),
+	const rawMeta = useSelect(
+		(select) => select('core/editor').getEditedPostAttribute('meta'),
 		[]
 	);
+	const meta = rawMeta ?? {};
+	const items = meta?.relatedPosts;
 
-	const [, setMeta] = useEntityProp('postType', postType, 'meta');
+	const metaRef = useRef(meta);
+	metaRef.current = meta;
+	const itemsRef = useRef(items);
+	itemsRef.current = items;
 
-	// Sync list store (items) to post meta. Use functional setMeta so we don't
-	// depend on meta in deps — otherwise setMeta triggers effect again → infinite loop (React #185).
-	useEffect(() => {
-		if (items.length === 0) return;
-		setMeta((prev) => ({ ...prev, relatedPosts: items }));
-	}, [items, setMeta]);
+	const safeItems = Array.isArray(items) ? items : [];
+
+	const writeRelatedPosts = useCallback(
+		(nextItems) => {
+			const next = Array.isArray(nextItems) ? nextItems : [];
+			itemsRef.current = next;
+			const nextMeta = { ...metaRef.current, relatedPosts: next };
+			metaRef.current = nextMeta;
+			editPost({ meta: nextMeta });
+		},
+		[editPost]
+	);
+
+	const append = useCallback(
+		(...newItems) => {
+			const current = Array.isArray(itemsRef.current)
+				? [...itemsRef.current]
+				: [];
+			writeRelatedPosts([...current, ...newItems]);
+		},
+		[writeRelatedPosts]
+	);
+
+	const reorder = useCallback(
+		(oldIndex, newIndex) => {
+			const current = Array.isArray(itemsRef.current)
+				? [...itemsRef.current]
+				: [];
+			const [moved] = current.splice(oldIndex, 1);
+			current.splice(newIndex, 0, moved);
+			writeRelatedPosts(current);
+		},
+		[writeRelatedPosts]
+	);
+
+	const remove = useCallback(
+		(index) => {
+			const current = Array.isArray(itemsRef.current)
+				? [...itemsRef.current]
+				: [];
+			current.splice(index, 1);
+			writeRelatedPosts(current);
+		},
+		[writeRelatedPosts]
+	);
+
+	const updateItemProp = useCallback(
+		(index, prop, value) => {
+			const current = Array.isArray(itemsRef.current)
+				? [...itemsRef.current]
+				: [];
+			current[index] = { ...current[index], [prop]: value };
+			writeRelatedPosts(current);
+		},
+		[writeRelatedPosts]
+	);
 
 	return (
 		<PluginDocumentSettingPanel
@@ -68,10 +114,7 @@ function RelatedPostsPanel() {
 			title="Related Posts"
 		>
 			{SEOSuggestButton && (
-				<>
-					<SEOSuggestButton />
-					<div style={{ marginTop: '12px' }} />
-				</>
+				<SEOSuggestButton append={append} existingItems={safeItems} />
 			)}
 			<WPEntitySearch
 				placeholder={__(
@@ -87,7 +130,6 @@ function RelatedPostsPanel() {
 					'quiz',
 				]}
 				onSelect={(entity) => {
-					// Transform the entity into something usable for related posts.
 					append({
 						key: randomId(),
 						link: entity.entityUrl,
@@ -98,15 +140,13 @@ function RelatedPostsPanel() {
 					});
 				}}
 				clearOnSelect={true}
+				showExcerpt={true}
 			>
 				<List
 					lockVertically
-					values={items}
+					values={safeItems}
 					onChange={({ oldIndex, newIndex }) =>
-						reorder({
-							from: oldIndex,
-							to: newIndex,
-						})
+						reorder(oldIndex, newIndex)
 					}
 					renderList={({ children, props }) => (
 						<div {...props}>{children}</div>
@@ -115,12 +155,14 @@ function RelatedPostsPanel() {
 						<div {...props}>
 							<ListStoreItem
 								key={value.key}
-								value={value}
 								label={value.title}
 								defaultLabel="Related Post"
 								index={index}
-								storeName="related-posts"
-								lastItem={index === items.length - 1}
+								onRemove={() => remove(index)}
+								onLabelChange={(newLabel) =>
+									updateItemProp(index, 'title', newLabel)
+								}
+								lastItem={index === safeItems.length - 1}
 							/>
 						</div>
 					)}

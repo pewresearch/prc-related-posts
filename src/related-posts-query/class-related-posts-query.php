@@ -58,7 +58,7 @@ class Related_Posts_Query {
 
 		$block_instance = $block->parsed_block;
 
-		$block_gap = \PRC\Platform\Block_Utils\get_block_gap_support_value( $attributes );
+		$block_gap = \PRC\BlockUtils\get_block_gap_support_value( $attributes );
 
 		// Set the block name to one that does not correspond to an existing registered block.
 		// This ensures that for the inner instances of the Related Posts block, we do not render any block supports.

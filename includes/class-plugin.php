@@ -145,12 +145,6 @@ class Plugin {
 
 		// Load block classes.
 		require_once plugin_dir_path( __DIR__ ) . '/build/related-posts-query/class-related-posts-query.php';
-
-		// Load the AI experiment and ability classes if the WP AI plugin is available.
-		if ( class_exists( '\WordPress\AI\Abstracts\Abstract_Experiment' ) ) {
-			require_once plugin_dir_path( __DIR__ ) . '/includes/ai-experiment/class-related-posts-ai-ability.php';
-			require_once plugin_dir_path( __DIR__ ) . '/includes/ai-experiment/class-related-posts-ai-experiment.php';
-		}
 	}
 
 	/**
@@ -162,6 +156,7 @@ class Plugin {
 	private function init_dependencies() {
 		$this->loader->add_action( 'init', $this, 'register_default_post_type_support', 5 );
 		$this->loader->add_action( 'init', $this, 'register_meta_fields' );
+		$this->loader->add_action( 'rest_api_init', $this, 'register_rest_fields', 99 );
 		$this->loader->add_action( 'enqueue_block_editor_assets', $this, 'enqueue_assets' );
 		$this->loader->add_action( 'wpcom_vip_cache_pre_execute_purges', $this, 'clear_cache_on_purge' );
 		$this->loader->add_action( 'prc_platform_on_update', $this, 'clear_cache_on_update' );
@@ -173,15 +168,29 @@ class Plugin {
 		);
 		new Related_Posts_Query( $this->get_loader() );
 
-		// Register the AI experiment with the WP AI Experiments plugin.
-		if ( class_exists( '\WordPress\AI\Abstracts\Abstract_Experiment' ) ) {
-			add_action(
-				'ai_experiments_register_experiments',
-				function ( $registry ) {
-					$registry->register_experiment( new Related_Posts_AI_Experiment() );
-				}
-			);
+		// After WP AI plugins_loaded bootstrap (priority 10); Abstract_Feature is not autoloadable before that.
+		add_action( 'plugins_loaded', array( $this, 'register_wp_ai_features' ), 11 );
+	}
+
+	/**
+	 * Load Related Posts AI classes and register the feature with the WP AI plugin.
+	 *
+	 * @return void
+	 */
+	public function register_wp_ai_features() {
+		if ( ! class_exists( '\WordPress\AI\Abstracts\Abstract_Feature' ) ) {
+			return;
 		}
+
+		require_once plugin_dir_path( __DIR__ ) . '/includes/ai-experiment/class-related-posts-ai-ability.php';
+		require_once plugin_dir_path( __DIR__ ) . '/includes/ai-experiment/class-related-posts-ai-experiment.php';
+
+		add_action(
+			'wpai_register_features',
+			function ( $registry ) {
+				$registry->register_feature( new Related_Posts_AI_Experiment() );
+			}
+		);
 	}
 
 	/**
@@ -201,8 +210,8 @@ class Plugin {
 	 * @return   array
 	 */
 	public static function get_enabled_post_types() {
-		$post_types         = get_post_types( array( 'public' => true ), 'names' );
-		$supported_types    = array_values(
+		$post_types      = get_post_types( array( 'public' => true ), 'names' );
+		$supported_types = array_values(
 			array_filter(
 				$post_types,
 				function ( $pt ) {
@@ -228,10 +237,10 @@ class Plugin {
 				$post_type,
 				self::$meta_key,
 				array(
-					'single'        => true,
-					'type'          => 'array',
-					'description'   => 'Array of custom related posts.',
-					'show_in_rest'  => array(
+					'single'            => true,
+					'type'              => 'array',
+					'description'       => 'Array of custom related posts.',
+					'show_in_rest'      => array(
 						'schema' => array(
 							'items' => array(
 								'type'       => 'object',
@@ -239,12 +248,106 @@ class Plugin {
 							),
 						),
 					),
-					'auth_callback' => function () {
+					'revisions_enabled' => true,
+					'auth_callback'     => function () {
 						return current_user_can( 'edit_posts' );
 					},
 				)
 			);
 		}
+	}
+
+	/**
+	 * Register the relatedPostsOrdered REST field for RTC compatibility.
+	 *
+	 * The editor reads/writes through this field instead of raw meta, so each
+	 * mutation is a single editPost() call with no dual-write churn.
+	 *
+	 * @hook rest_api_init
+	 */
+	public function register_rest_fields(): void {
+		$schema = array(
+			'description' => 'Ordered related posts for RTC-safe editing.',
+			'type'        => 'array',
+			'items'       => array(
+				'type'       => 'object',
+				'properties' => self::$schema_properties,
+			),
+		);
+
+		foreach ( self::get_enabled_post_types() as $post_type ) {
+			register_rest_field(
+				$post_type,
+				'relatedPostsOrdered',
+				array(
+					'get_callback'    => array( $this, 'get_related_posts_ordered' ),
+					'update_callback' => array( $this, 'update_related_posts_ordered' ),
+					'schema'          => $schema,
+				)
+			);
+		}
+	}
+
+	/**
+	 * REST get callback: relatedPostsOrdered.
+	 *
+	 * @param mixed $object Prepared post (array or WP_Post).
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function get_related_posts_ordered( mixed $object ): array {
+		$post_id = is_array( $object ) && isset( $object['id'] ) ? (int) $object['id'] : 0;
+		if ( $post_id <= 0 ) {
+			return array();
+		}
+		$raw = get_post_meta( $post_id, self::$meta_key, true );
+		return is_array( $raw ) ? $this->sanitize_related_posts_array( $raw ) : array();
+	}
+
+	/**
+	 * REST update callback: relatedPostsOrdered.
+	 *
+	 * @param mixed $value  New value from the editor.
+	 * @param mixed $object Post object.
+	 * @return bool|\WP_Error
+	 */
+	public function update_related_posts_ordered( mixed $value, mixed $object ): bool|\WP_Error {
+		$post_id = $object->ID ?? ( is_array( $object ) ? ( $object['id'] ?? 0 ) : 0 );
+		$post_id = (int) $post_id;
+		if ( $post_id <= 0 ) {
+			return new \WP_Error( 'invalid_post', 'Invalid post for relatedPostsOrdered.' );
+		}
+		if ( ! current_user_can( 'edit_post', $post_id ) ) {
+			return new \WP_Error( 'rest_forbidden', 'Sorry, you are not allowed to edit this post.' );
+		}
+		$sanitized = $this->sanitize_related_posts_array( is_array( $value ) ? $value : array() );
+		update_post_meta( $post_id, self::$meta_key, $sanitized );
+		wp_cache_delete( $post_id, self::$cache_key );
+		return true;
+	}
+
+	/**
+	 * Sanitize an array of related post rows from REST input.
+	 *
+	 * @param array $value Raw array.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function sanitize_related_posts_array( array $value ): array {
+		$out = array();
+		foreach ( $value as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+			$out[] = array(
+				'date'      => isset( $row['date'] ) ? (string) $row['date'] : '',
+				'key'       => isset( $row['key'] ) ? (string) $row['key'] : '',
+				'link'      => isset( $row['link'] ) ? esc_url_raw( (string) $row['link'] ) : '',
+				'permalink' => isset( $row['permalink'] ) ? esc_url_raw( (string) $row['permalink'] ) : '',
+				'postId'    => isset( $row['postId'] ) ? (int) $row['postId'] : 0,
+				'title'     => isset( $row['title'] ) ? sanitize_text_field( (string) $row['title'] ) : '',
+				'label'     => isset( $row['label'] ) ? sanitize_text_field( (string) $row['label'] ) : '',
+			);
+		}
+		return $out;
 	}
 
 	/**
@@ -282,7 +385,7 @@ class Plugin {
 	public function enqueue_assets() {
 		$registered = $this->register_assets();
 		if ( is_admin() && ! is_wp_error( $registered ) ) {
-			$screen_post_type = \PRC\Platform\get_wp_admin_current_post_type();
+			$screen_post_type = \PRC\BlockUtils\get_wp_admin_current_post_type();
 			if ( in_array( $screen_post_type, self::get_enabled_post_types() ) ) {
 				wp_enqueue_script( self::$handle );
 			}

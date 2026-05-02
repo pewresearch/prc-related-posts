@@ -6,8 +6,6 @@ import styled from '@emotion/styled';
 /**
  * WordPress Dependencies
  */
-import { useEffect, useState } from '@wordpress/element';
-import { useDispatch } from '@wordpress/data';
 import { Icon, IconButton, TextControl } from '@wordpress/components';
 import { dragHandle } from '@wordpress/icons';
 
@@ -49,19 +47,10 @@ function ListStoreItem({
 	label,
 	defaultLabel,
 	index,
-	onRemove = false,
-	storeName = 'report',
+	onRemove,
+	onLabelChange,
 	lastItem = false,
 }) {
-	const { remove, setItemProp } = useDispatch(`prc/${storeName}`);
-	const [labelText, setLabelText] = useState(
-		undefined !== label ? label : defaultLabel
-	);
-
-	useEffect(() => {
-		setItemProp(index, 'title', labelText);
-	}, [labelText]);
-
 	return (
 		<ListItem className={`${lastItem ? 'is-last' : null}`}>
 			<Row>
@@ -70,21 +59,21 @@ function ListStoreItem({
 				</DragHandle>
 				<LabelControl>
 					<TextControl
-						value={labelText}
-						onChange={(newLabel) => setLabelText(newLabel)}
+						value={label ?? defaultLabel ?? ''}
+						onChange={(newLabel) => {
+							if (onLabelChange) {
+								onLabelChange(newLabel);
+							}
+						}}
 					/>
 				</LabelControl>
 				<div style={{ display: 'flex', flexDirection: 'column' }}>
 					<IconButton
 						icon="no-alt"
 						onClick={() => {
-							if (
-								false !== onRemove &&
-								'function' === typeof onRemove
-							) {
-								onRemove();
+							if (onRemove) {
+								onRemove(index);
 							}
-							remove(index);
 						}}
 					/>
 				</div>

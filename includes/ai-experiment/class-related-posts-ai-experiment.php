@@ -12,7 +12,8 @@
 
 namespace PRC\Platform\Related_Posts;
 
-use WordPress\AI\Abstracts\Abstract_Experiment;
+use WordPress\AI\Abstracts\Abstract_Feature;
+use WordPress\AI\Experiments\Experiment_Category;
 
 // If this file is called directly, abort.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -24,20 +25,29 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * @since 1.0.0
  */
-class Related_Posts_AI_Experiment extends Abstract_Experiment {
+class Related_Posts_AI_Experiment extends Abstract_Feature {
 
 	/**
-	 * Loads experiment metadata.
+	 * Feature identifier.
+	 *
+	 * @since 1.0.0
+	 */
+	public static function get_id(): string {
+		return 'related-posts-ai-suggest';
+	}
+
+	/**
+	 * Loads feature metadata.
 	 *
 	 * @since 1.0.0
 	 *
-	 * @return array{id: string, label: string, description: string} Experiment metadata.
+	 * @return array{label: string, description: string, category: string} Feature metadata.
 	 */
-	protected function load_experiment_metadata(): array {
+	protected function load_metadata(): array {
 		return array(
-			'id'          => 'related-posts-ai-suggest',
 			'label'       => __( 'Related Posts AI Suggest', 'prc-related-posts' ),
 			'description' => __( 'Uses AI to analyze a post\'s categories and suggest the most relevant related posts for editorial curation. Adds a "Suggest with AI" button to the Related Posts sidebar panel in the editor.', 'prc-related-posts' ),
+			'category'    => Experiment_Category::EDITOR,
 		);
 	}
 
