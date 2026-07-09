@@ -20,29 +20,28 @@ runtime modules 2.51 KiB 3 modules
 built modules 4.66 KiB (javascript) 75 bytes (css/mini-extract) [built]
   ./src/related-posts-query/index.js + 10 modules 4.66 KiB [not cacheable] [built] [code generated]
   css ../../node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[3].use[1]!../../node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[3].use[2]!../../node_modules/sass-loader/dist/cjs.js??ruleSet[1].rules[3].use[3]!./src/related-posts-query/style.scss 75 bytes [built] [code generated]
-webpack 5.106.2 compiled successfully in 2916 ms
+webpack 5.106.2 compiled successfully in 2664 ms
 
-webpack 5.106.2 compiled successfully in 79 ms
+webpack 5.106.2 compiled successfully in 92 ms
 Block metadata PHP file generated at: build/blocks-manifest.php
 
 > @prc/related-posts@1.0.0 build:inspector-panel
 > wp-scripts build --source-path=includes/inspector-sidebar-panel/src --output-path=includes/inspector-sidebar-panel/build
 
-asset index.js 40.3 KiB [compared for emit] [minimized] (name: index)
-asset index.asset.php 243 bytes [compared for emit] (name: index)
-Entrypoint index 40.5 KiB = index.js 40.3 KiB index.asset.php 243 bytes
-orphan modules 318 KiB [orphan] 348 modules
+asset index.js 20 KiB [compared for emit] [minimized] (name: index)
+asset index.asset.php 261 bytes [compared for emit] (name: index)
+Entrypoint index 20.2 KiB = index.js 20 KiB index.asset.php 261 bytes
+orphan modules 238 KiB [orphan] 323 modules
 runtime modules 663 bytes 3 modules
-built modules 103 KiB [built]
-  modules by path ./includes/inspector-sidebar-panel/src/ 40.6 KiB
-    ./includes/inspector-sidebar-panel/src/index.js + 8 modules 32.8 KiB [not cacheable] [built] [code generated]
+built modules 41 KiB [built]
+  modules by path ./includes/inspector-sidebar-panel/src/ 40.7 KiB
+    ./includes/inspector-sidebar-panel/src/index.js + 9 modules 32.8 KiB [not cacheable] [built] [code generated]
     ./includes/inspector-sidebar-panel/src/ai-suggest-button.jsx 7.83 KiB [built] [code generated]
   external "prcComponents" 42 bytes [built] [code generated]
   external ["wp","i18n"] 42 bytes [built] [code generated]
   external ["wp","element"] 42 bytes [built] [code generated]
   external ["wp","data"] 42 bytes [built] [code generated]
   external "ReactJSXRuntime" 42 bytes [built] [code generated]
-  external "React" 42 bytes [built] [code generated]
-  ../../node_modules/@emotion/styled/dist/emotion-styled.browser.esm.j...(truncated) 62.2 KiB [built] [code generated]
+  external "emotionStyled" 42 bytes [built] [code generated]
   external ["wp","components"] 42 bytes [built] [code generated]
-webpack 5.106.2 compiled successfully in 6524 ms
+webpack 5.106.2 compiled successfully in 2665 ms

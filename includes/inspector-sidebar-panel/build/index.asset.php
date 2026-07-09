@@ -1,1 +1,1 @@
-<?php return array('dependencies' => array('prc-components', 'react', 'react-dom', 'react-jsx-runtime', 'wp-components', 'wp-data', 'wp-edit-post', 'wp-element', 'wp-i18n', 'wp-plugins', 'wp-primitives'), 'version' => '4157633a5371927c1a3d');
+<?php return array('dependencies' => array('emotion-styled', 'prc-components', 'react', 'react-dom', 'react-jsx-runtime', 'wp-components', 'wp-data', 'wp-edit-post', 'wp-element', 'wp-i18n', 'wp-plugins', 'wp-primitives'), 'version' => '40e2fdf01801b02a245a');
