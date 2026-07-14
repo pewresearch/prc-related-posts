@@ -175,54 +175,48 @@ class Related_Posts_AI_Ability {
 			return array();
 		}
 
-		// First, try to find posts that share the primary category.
-		$primary_category_id = null;
-		if ( function_exists( '\PRC\BlockUtils\get_primary_term_id' ) ) {
-			$primary_category_id = \PRC\BlockUtils\get_primary_term_id( $post_id, 'category' );
-		}
-
 		$candidates = array();
 
 		// Phase 1: Posts matching the primary category (up to 10).
-		if ( $primary_category_id && is_numeric( $primary_category_id ) ) {
-			$primary_term = get_term_by( 'term_taxonomy_id', (int) $primary_category_id, 'category' );
-			if ( $primary_term ) {
-				$primary_query = new WP_Query(
-					array(
-						'post_type'      => array( 'post', 'short-read', 'feature', 'fact-sheet' ),
-						'post_parent'    => 0,
-						'posts_per_page' => 10,
-						'post_status'    => 'publish',
-						'post__not_in'   => array( $post_id ),
-						'orderby'        => 'date',
-						'order'          => 'DESC',
-						'tax_query'      => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
-							array(
-								'taxonomy' => 'category',
-								'field'    => 'term_id',
-								'terms'    => $primary_term->term_id,
-							),
+		$primary_term = class_exists( '\PRC\Platform\Schema_SEO\Primary_Term' )
+			? \PRC\Platform\Schema_SEO\Primary_Term::get_term( (int) $post_id, 'category' )
+			: null;
+		if ( $primary_term instanceof \WP_Term ) {
+			$primary_query = new WP_Query(
+				array(
+					'post_type'      => array( 'post', 'short-read', 'feature', 'fact-sheet' ),
+					'post_parent'    => 0,
+					'posts_per_page' => 10,
+					'post_status'    => 'publish',
+					'post__not_in'   => array( $post_id ),
+					'orderby'        => 'date',
+					'order'          => 'DESC',
+					'tax_query'      => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
+						array(
+							'taxonomy' => 'category',
+							'field'    => 'term_id',
+							'terms'    => $primary_term->term_id,
 						),
-						'facetwp'        => false,
-					)
-				);
+					),
+					'facetwp'        => false,
+				)
+			);
 
-				if ( $primary_query->have_posts() ) {
-					while ( $primary_query->have_posts() ) {
-						$primary_query->the_post();
-						$pid                = get_the_ID();
-						$candidates[ $pid ] = array(
-							'postId'  => $pid,
-							'title'   => get_the_title(),
-							'url'     => get_permalink( $pid ),
-							'date'    => get_the_date( 'Y-m-d' ),
-							'excerpt' => wp_trim_words( get_the_excerpt(), 30, '...' ),
-							'label'   => $this->get_label( $pid ),
-						);
-					}
+			if ( $primary_query->have_posts() ) {
+				while ( $primary_query->have_posts() ) {
+					$primary_query->the_post();
+					$pid                = get_the_ID();
+					$candidates[ $pid ] = array(
+						'postId'  => $pid,
+						'title'   => get_the_title(),
+						'url'     => get_permalink( $pid ),
+						'date'    => get_the_date( 'Y-m-d' ),
+						'excerpt' => wp_trim_words( get_the_excerpt(), 30, '...' ),
+						'label'   => $this->get_label( $pid ),
+					);
 				}
-				wp_reset_postdata();
 			}
+			wp_reset_postdata();
 		}
 
 		// Phase 2: Posts matching any of the post's categories (fill up to 15).
@@ -397,18 +391,11 @@ Each item must include the exact postId from the candidates and a brief reason f
 	 * @return string|null Section name or null.
 	 */
 	private function get_primary_section_name( int $post_id ): ?string {
-		if ( ! function_exists( '\PRC\BlockUtils\get_primary_term_id' ) ) {
+		if ( ! class_exists( '\PRC\Platform\Schema_SEO\Primary_Term' ) ) {
 			return null;
 		}
-		$primary_taxonomy_term_id = \PRC\BlockUtils\get_primary_term_id( $post_id, 'category' );
-		if ( false === $primary_taxonomy_term_id || ! is_numeric( $primary_taxonomy_term_id ) ) {
-			return null;
-		}
-		$term = get_term_by( 'term_taxonomy_id', (int) $primary_taxonomy_term_id, 'category' );
-		if ( ! $term || is_wp_error( $term ) ) {
-			return null;
-		}
-		return $term->name;
+		$name = \PRC\Platform\Schema_SEO\Primary_Term::get_name( $post_id, 'category' );
+		return '' !== $name ? $name : null;
 	}
 
 	/**

@@ -89,21 +89,12 @@ class API {
 		$meta_key      = '_yoast_wpseo_primary_' . $taxonomy;
 		$related_posts = array();
 
-		// Get the primary topic for this post.
-		$primary_taxonomy_term_id = \PRC\BlockUtils\get_primary_term_id( $this->ID, $taxonomy );
-		if ( false === $primary_taxonomy_term_id || ! is_numeric( $primary_taxonomy_term_id ) ) {
+		// Primary terms are term_ids from Schema SEO / Yoast — resolve via the shared helper.
+		if ( ! class_exists( '\PRC\Platform\Schema_SEO\Primary_Term' ) ) {
 			return $related_posts;
 		}
-
-		$primary_taxonomy_term = get_term_by( 'term_taxonomy_id', (int) $primary_taxonomy_term_id, $taxonomy );
-
-		if ( ! $primary_taxonomy_term ) {
-			$terms = wp_get_post_terms( $this->ID, $taxonomy );
-			if ( ! is_wp_error( $terms ) && ! empty( $terms ) ) {
-				$primary_taxonomy_term = $terms[0];
-			}
-		}
-		if ( empty( $primary_taxonomy_term ) ) {
+		$primary_taxonomy_term = \PRC\Platform\Schema_SEO\Primary_Term::get_term( $this->ID, $taxonomy );
+		if ( ! ( $primary_taxonomy_term instanceof \WP_Term ) ) {
 			return $related_posts;
 		}
 
