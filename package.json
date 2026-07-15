@@ -1,6 +1,6 @@
 {
 	"name": "@prc/related-posts",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"description": "PRC Related Posts is a module for PRC Platform that...",
 	"scripts": {
 		"build": "npm run build:blocks && npm run build:inspector-panel",

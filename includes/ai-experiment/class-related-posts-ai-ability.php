@@ -25,6 +25,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Related_Posts_AI_Ability {
 
 	/**
+	 * Plugin file used to validate activation on the target site.
+	 *
+	 * @var string
+	 */
+	private const PLUGIN_FILE = 'prc-related-posts/prc-related-posts.php';
+
+	/**
 	 * Ability name.
 	 *
 	 * @var string
@@ -50,6 +57,7 @@ class Related_Posts_AI_Ability {
 							'type'        => 'integer',
 							'description' => 'The post ID to find related posts for.',
 						),
+						'site_id' => \PRC\Platform\AI\Utils\site_id_input_schema_property(),
 					),
 					'required'             => array( 'post_id' ),
 					'additionalProperties' => false,
@@ -122,13 +130,25 @@ class Related_Posts_AI_Ability {
 						),
 					),
 				),
-				'execute_callback'    => array( $this, 'find_related_posts' ),
-				'permission_callback' => function () {
-					return current_user_can( 'edit_posts' );
+				'execute_callback'    => function ( $input ) {
+					return $this->with_site(
+						$input,
+						function () use ( $input ) {
+							return $this->find_related_posts( $input );
+						}
+					);
+				},
+				'permission_callback' => function ( $input = null ) {
+					return $this->with_site(
+						$input,
+						function () {
+							return current_user_can( 'edit_posts' );
+						}
+					);
 				},
 				'meta'                => array(
 					'annotations'  => array(
-						'instructions' => 'This ability takes a post ID. For published posts it requests Parse.ly content recommendations when configured; otherwise it finds up to 15 candidate posts sharing the post\'s categories and uses AI to select and rank the top 5 most relevant suggestions. The result includes the reasoning for each suggestion and a source field.',
+						'instructions' => 'This ability takes a post ID. Optionally pass site_id to run against a specific multisite blog; defaults to the content site (20). If this plugin is inactive on the target site, the ability returns plugin_inactive_on_site. For published posts it requests Parse.ly content recommendations when configured; otherwise it finds up to 15 candidate posts sharing the post\'s categories and uses AI to select and rank the top 5 most relevant suggestions. The result includes the reasoning for each suggestion and a source field.',
 						'readonly'     => true,
 						'destructive'  => false,
 						'idempotent'   => false,
@@ -678,6 +698,21 @@ Each item must include the exact postId from the candidates and a brief reason f
 			'source_post'     => $source_post,
 			'candidate_count' => $candidate_count,
 			'source'          => 'category-query',
+		);
+	}
+
+	/**
+	 * Run a callback on the requested target site.
+	 *
+	 * @param array|null $input    Ability input.
+	 * @param callable   $callback Callback to run after site validation/switching.
+	 * @return mixed
+	 */
+	private function with_site( $input, callable $callback ) {
+		return \PRC\Platform\AI\Utils\with_site(
+			\PRC\Platform\AI\Utils\resolve_site_id( is_array( $input ) ? $input : null ),
+			self::PLUGIN_FILE,
+			$callback
 		);
 	}
 }
