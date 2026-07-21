@@ -218,7 +218,6 @@ class Related_Posts_AI_Ability {
 							'terms'    => $primary_term->term_id,
 						),
 					),
-					'facetwp'        => false,
 				)
 			);
 
@@ -265,7 +264,6 @@ class Related_Posts_AI_Ability {
 					'orderby'        => 'date',
 					'order'          => 'DESC',
 					'tax_query'      => $tax_query, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
-					'facetwp'        => false,
 				)
 			);
 

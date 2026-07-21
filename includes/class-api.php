@@ -105,7 +105,6 @@ class API {
 			'meta_key'       => $meta_key,
 			'meta_value'     => $primary_taxonomy_term->term_id,
 			'post__not_in'   => array( $this->ID ), // Exclude this post.
-			'facetwp'        => false,
 		);
 
 		// If posts with matching primary term are not found, then fallback to searching for posts assigned to this posts priamry term.
