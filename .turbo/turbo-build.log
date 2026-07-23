@@ -1,9 +1,9 @@
 
-> @prc/related-posts@1.0.1 build
+> @prc/related-posts@1.0.0 build
 > npm run build:blocks && npm run build:inspector-panel
 
 
-> @prc/related-posts@1.0.1 build:blocks
+> @prc/related-posts@1.0.0 build:blocks
 > wp-scripts build --experimental-modules --webpack-copy-php && wp-scripts build-blocks-manifest
 
 assets by chunk 3 KiB (name: related-posts-query/index)
@@ -20,12 +20,12 @@ runtime modules 2.51 KiB 3 modules
 built modules 4.66 KiB (javascript) 75 bytes (css/mini-extract) [built]
   ./src/related-posts-query/index.js + 10 modules 4.66 KiB [not cacheable] [built] [code generated]
   css ../../node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[3].use[1]!../../node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[3].use[2]!../../node_modules/sass-loader/dist/cjs.js??ruleSet[1].rules[3].use[3]!./src/related-posts-query/style.scss 75 bytes [built] [code generated]
-webpack 5.106.2 compiled successfully in 2386 ms
+webpack 5.106.2 compiled successfully in 1536 ms
 
-webpack 5.106.2 compiled successfully in 71 ms
+webpack 5.106.2 compiled successfully in 64 ms
 Block metadata PHP file generated at: build/blocks-manifest.php
 
-> @prc/related-posts@1.0.1 build:inspector-panel
+> @prc/related-posts@1.0.0 build:inspector-panel
 > wp-scripts build --source-path=includes/inspector-sidebar-panel/src --output-path=includes/inspector-sidebar-panel/build
 
 asset index.js 20 KiB [compared for emit] [minimized] (name: index)
@@ -44,4 +44,4 @@ built modules 41 KiB [built]
   external "ReactJSXRuntime" 42 bytes [built] [code generated]
   external "emotionStyled" 42 bytes [built] [code generated]
   external ["wp","components"] 42 bytes [built] [code generated]
-webpack 5.106.2 compiled successfully in 2917 ms
+webpack 5.106.2 compiled successfully in 1463 ms
