@@ -1,5 +1,7 @@
 # PRC Related Posts
 
+> Canonical docs: [docs/plugins/prc-related-posts/](../../docs/plugins/prc-related-posts/)
+
 A WordPress plugin for the PRC Platform that provides editorial tools and customizable blocks for managing related content relationships. Features an intuitive editor interface for manual curation and dynamic blocks for displaying related posts across your site with flexible layout options.
 
 ## Features
