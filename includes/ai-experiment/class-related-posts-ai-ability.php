@@ -361,10 +361,19 @@ Each item must include the exact postId from the candidates and a brief reason f
 				return array();
 			}
 
+			if ( ! function_exists( '\WordPress\AI\get_preferred_models_for_text_generation' ) ) {
+				return array();
+			}
+
+			$models = \WordPress\AI\get_preferred_models_for_text_generation();
+			if ( ! is_array( $models ) || array() === $models ) {
+				return array();
+			}
+
 			$response = $builder
 				->using_system_instruction( self::get_ranking_instructions() )
 				->using_temperature( 0.2 )
-				->using_model_preference( 'claude-haiku-4-5', 'gemini-2.5-flash' )
+				->using_model_preference( ...$models )
 				->as_json_response(
 					array(
 						'type'  => 'array',
@@ -456,7 +465,7 @@ Each item must include the exact postId from the candidates and a brief reason f
 		$api_url = add_query_arg( $params, 'https://api.parsely.com/v2/related' );
 
 		$request_args = array(
-			'timeout' => 15,
+			'timeout' => 15, // phpcs:ignore WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- Parse.ly related API can exceed the VIP default.
 			'headers' => array(
 				'Accept' => 'application/json',
 			),
