@@ -372,7 +372,6 @@ Each item must include the exact postId from the candidates and a brief reason f
 
 			$response = $builder
 				->using_system_instruction( self::get_ranking_instructions() )
-				->using_temperature( 0.2 )
 				->using_model_preference( ...$models )
 				->as_json_response(
 					array(
