@@ -7,13 +7,20 @@
 
 namespace PRC\Platform\Related_Posts;
 
-use WP_Error;
+use PRC\Platform\Schema_SEO\Primary_Term;
 use WP_Query;
 
 /**
  * The related posts API class.
  */
 class API {
+	/**
+	 * How many of the newest posts in the primary term to consider.
+	 *
+	 * @var int
+	 */
+	const CANDIDATE_POOL_SIZE = 100;
+
 	/**
 	 * The post ID.
 	 *
@@ -26,7 +33,7 @@ class API {
 	 *
 	 * @var string
 	 */
-	public $post_type;
+	public $post_type = '';
 
 	/**
 	 * The arguments.
@@ -52,7 +59,7 @@ class API {
 		$this->ID  = $post_id;
 		$post_type = get_post_type( $post_id );
 		if ( false === $post_type ) {
-			return new WP_Error( 'invalid_post_id', __( 'Invalid post ID.' ) );
+			return;
 		}
 		$this->post_type = $post_type;
 		$this->args      = wp_parse_args( $args, $this->args );
@@ -78,67 +85,85 @@ class API {
 	}
 
 	/**
-	 * Get the posts with matching primary terms.
+	 * Order candidate posts so those sharing the primary term come first.
 	 *
-	 * @param int  $posts_per_page The number of posts per page.
-	 * @param bool $fallback_to_taxonomy The fallback to taxonomy.
-	 * @return array
+	 * Uses the same effective primary term as the editor shows, which falls back to the first
+	 * assigned term when none is saved. Candidate order is preserved within each group.
+	 *
+	 * @param int[]  $candidate_ids   Candidate post IDs.
+	 * @param int    $primary_term_id The current post's primary term ID.
+	 * @param string $taxonomy        Taxonomy slug.
+	 * @return int[]
 	 */
-	private function get_posts_with_matching_primary_terms( $posts_per_page = 5, $fallback_to_taxonomy = false ) {
-		$taxonomy      = $this->args['taxonomy'];
-		$meta_key      = '_yoast_wpseo_primary_' . $taxonomy;
-		$related_posts = array();
-
-		// Primary terms are term_ids from Schema SEO / Yoast — resolve via the shared helper.
-		if ( ! class_exists( '\PRC\Platform\Schema_SEO\Primary_Term' ) ) {
-			return $related_posts;
-		}
-		$primary_taxonomy_term = \PRC\Platform\Schema_SEO\Primary_Term::get_term( $this->ID, $taxonomy );
-		if ( ! ( $primary_taxonomy_term instanceof \WP_Term ) ) {
-			return $related_posts;
-		}
-
-		$query_args = array(
-			'post_type'      => array( 'post', 'short-read', 'feature', 'fact-sheet' ),
-			'post_parent'    => 0,
-			'posts_per_page' => $posts_per_page,
-			'meta_key'       => $meta_key,
-			'meta_value'     => $primary_taxonomy_term->term_id,
-			'post__not_in'   => array( $this->ID ), // Exclude this post.
-		);
-
-		// If posts with matching primary term are not found, then fallback to searching for posts assigned to this posts priamry term.
-		if ( true === $fallback_to_taxonomy ) {
-			unset( $query_args['meta_key'] );
-			unset( $query_args['meta_value'] );
-			$query_args['tax_query'] = array(
-				array(
-					'taxonomy' => $taxonomy,
-					'field'    => 'term_id',
-					'terms'    => $primary_taxonomy_term->term_id,
-				),
-			);
-		}
-
-		$query = new WP_Query( $query_args );
-		if ( $query->have_posts() ) {
-			while ( $query->have_posts() ) {
-				$query->the_post();
-				$post_id         = get_the_ID();
-				$label           = $this->get_label( $post_id );
-				$related_posts[] = array(
-					'postId'   => $post_id,
-					'postType' => get_post_type(),
-					'url'      => get_permalink( $post_id ),
-					'title'    => get_the_title(),
-					'date'     => get_the_date(),
-					'excerpt'  => false,
-					'label'    => $label,
-				);
+	public static function rank_by_primary_term( array $candidate_ids, int $primary_term_id, string $taxonomy ): array {
+		$same_primary = array();
+		$same_topic   = array();
+		foreach ( $candidate_ids as $candidate_id ) {
+			if ( Primary_Term::get_id( $candidate_id, $taxonomy ) === $primary_term_id ) {
+				$same_primary[] = $candidate_id;
+			} else {
+				$same_topic[] = $candidate_id;
 			}
 		}
-		wp_reset_postdata();
-		return $related_posts;
+		return array_merge( $same_primary, $same_topic );
+	}
+
+	/**
+	 * Get the newest posts in this post's primary term, preferring posts that share it as their primary term.
+	 *
+	 * @param int $posts_per_page The number of posts to return.
+	 * @return array
+	 */
+	private function get_posts_in_primary_term( $posts_per_page = 5 ) {
+		$taxonomy = $this->args['taxonomy'];
+
+		if ( ! class_exists( Primary_Term::class ) ) {
+			return array();
+		}
+		$primary_taxonomy_term = Primary_Term::get_term( $this->ID, $taxonomy );
+		if ( ! ( $primary_taxonomy_term instanceof \WP_Term ) ) {
+			return array();
+		}
+
+		// Primary terms live in serialized Schema SEO meta, so match them in PHP over the newest posts in the term.
+		$query         = new WP_Query(
+			array(
+				'post_type'      => array( 'post', 'short-read', 'feature', 'fact-sheet' ),
+				'post_parent'    => 0,
+				'posts_per_page' => self::CANDIDATE_POOL_SIZE,
+				'post__not_in'   => array( $this->ID ), // phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.PostNotIn_post__not_in -- Single current post ID.
+				'no_found_rows'  => true,
+				'tax_query'      => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
+					array(
+						'taxonomy' => $taxonomy,
+						'field'    => 'term_id',
+						'terms'    => $primary_taxonomy_term->term_id,
+					),
+				),
+			)
+		);
+		$candidate_ids = wp_list_pluck( $query->posts, 'ID' );
+
+		$ranked_ids = array_slice(
+			self::rank_by_primary_term( $candidate_ids, $primary_taxonomy_term->term_id, $taxonomy ),
+			0,
+			$posts_per_page
+		);
+
+		return array_map(
+			function ( $post_id ) {
+				return array(
+					'postId'   => $post_id,
+					'postType' => get_post_type( $post_id ),
+					'url'      => get_permalink( $post_id ),
+					'title'    => get_the_title( $post_id ),
+					'date'     => get_the_date( '', $post_id ),
+					'excerpt'  => false,
+					'label'    => $this->get_label( $post_id ),
+				);
+			},
+			$ranked_ids
+		);
 	}
 
 	/**
@@ -147,17 +172,23 @@ class API {
 	 * @return array
 	 */
 	private function get_custom_related_posts() {
-		$data = get_post_meta( $this->ID, Plugin::$meta_key, true );
+		$data = Plugin::get_related_posts_meta_raw( $this->ID );
+		if ( null === $data ) {
+			return array();
+		}
 		if ( $this->is_json( $data ) ) {
 			$data = json_decode( $data, true );
 		}
 
 		$related_posts = array();
-		if ( empty( $data ) ) {
+		if ( empty( $data ) || ! is_array( $data ) ) {
 			return $related_posts;
 		}
 
 		foreach ( $data as $key => $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
 			if ( array_key_exists( 'postId', $item ) ) {
 				$related_posts[] = array(
 					'postId'   => $item['postId'],
@@ -194,18 +225,14 @@ class API {
 		$legacy_fix_check = get_post_meta( $post_id, '_legacy_related_posts_fixed', true );
 		$legacy_fix_check = boolval( $legacy_fix_check );
 		if ( ( strtotime( $post_date ) < strtotime( '2024-04-18' ) ) && true !== $legacy_fix_check ) {
-			do_action( 'qm/debug', 'Custom Related Posts Disabled For Legacy Post' );
+			do_action( 'qm/debug', 'Custom Related Posts Disabled For Legacy Post' ); // phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- Query Monitor hook.
 			$custom_posts = array();
 		} else {
 			$custom_posts = $this->get_custom_related_posts();
 		}
 
 		if ( 5 > count( $custom_posts ) && ( empty( $related_posts ) || false === $related_posts ) ) {
-			$related_posts = $this->get_posts_with_matching_primary_terms( $per_page );
-			// If not enough related posts are found keying off primary topic widen the search and get all posts that at least have this post's primary topic as a topic.
-			if ( 5 > count( $related_posts ) ) {
-				$related_posts = $this->get_posts_with_matching_primary_terms( $per_page, true );
-			}
+			$related_posts = $this->get_posts_in_primary_term( $per_page );
 			// Sort by date desc.
 			usort(
 				$related_posts,
@@ -230,7 +257,7 @@ class API {
 
 		if ( ! is_preview() && ! is_user_logged_in() ) {
 			// Store the related posts for 1 hour.
-			wp_cache_set( $post_id, $related_posts, Plugin::$cache_key, Plugin::$cache_time );
+			wp_cache_set( $post_id, $related_posts, Plugin::$cache_key, HOUR_IN_SECONDS );
 		}
 
 		return $related_posts;
@@ -253,7 +280,7 @@ class API {
 	 */
 	public function query() {
 		// If this not an approved post type then return empty array.
-		if ( ! in_array( $this->post_type, Plugin::get_enabled_post_types() ) ) {
+		if ( '' === $this->post_type || ! in_array( $this->post_type, Plugin::get_enabled_post_types(), true ) ) {
 			return array();
 		}
 		return $this->get_related_posts();

@@ -71,6 +71,20 @@ class Plugin {
 	public static $meta_key = 'relatedPosts';
 
 	/**
+	 * Read relatedPosts meta without triggering core warnings on corrupt empty rows.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return mixed|null Unserialized meta value, or null when absent.
+	 */
+	public static function get_related_posts_meta_raw( int $post_id ) {
+		if ( $post_id <= 0 ) {
+			return null;
+		}
+
+		return first_post_meta_value( get_post_meta( $post_id, self::$meta_key, false ) );
+	}
+
+	/**
 	 * The schema properties.
 	 *
 	 * @since    1.0.0
@@ -299,7 +313,7 @@ class Plugin {
 		if ( $post_id <= 0 ) {
 			return array();
 		}
-		$raw = get_post_meta( $post_id, self::$meta_key, true );
+		$raw = self::get_related_posts_meta_raw( $post_id );
 		return is_array( $raw ) ? $this->sanitize_related_posts_array( $raw ) : array();
 	}
 
@@ -385,7 +399,7 @@ class Plugin {
 	public function enqueue_assets() {
 		$registered = $this->register_assets();
 		if ( is_admin() && ! is_wp_error( $registered ) ) {
-			$screen_post_type = \PRC\BlockUtils\get_wp_admin_current_post_type();
+			$screen_post_type = \PRC\Primitives\BlockUtils\get_wp_admin_current_post_type();
 			if ( in_array( $screen_post_type, self::get_enabled_post_types() ) ) {
 				wp_enqueue_script( self::$handle );
 			}

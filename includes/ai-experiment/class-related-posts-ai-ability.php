@@ -446,7 +446,7 @@ Each item must include the exact postId from the candidates and a brief reason f
 			return array();
 		}
 
-		$normalized_url = \PRC\BlockUtils\normalize_url_to_production( $permalink );
+		$normalized_url = \PRC\Primitives\BlockUtils\normalize_url_to_production( $permalink );
 		$api_key        = constant( 'PRC_PLATFORM_PARSELY_API_KEY' );
 
 		$params = array(
