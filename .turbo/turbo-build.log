@@ -1,9 +1,9 @@
 
-> @prc/related-posts@1.0.4 build
+> @prc/related-posts@1.0.3 build
 > npm run build:blocks && npm run build:inspector-panel
 
 
-> @prc/related-posts@1.0.4 build:blocks
+> @prc/related-posts@1.0.3 build:blocks
 > wp-scripts build --experimental-modules --webpack-copy-php && wp-scripts build-blocks-manifest
 
 Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
@@ -23,12 +23,12 @@ runtime modules 2.51 KiB 3 modules
 built modules 4.66 KiB (javascript) 75 bytes (css/mini-extract) [1m[33m[built][39m[22m
   [1m./src/related-posts-query/index.js + 10 modules[39m[22m 4.66 KiB [1m[31m[not cacheable][39m[22m [1m[33m[built][39m[22m [1m[33m[code generated][39m[22m
   css ../../node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[3].use[1]!../../node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[3].use[2]!../../node_modules/sass-loader/dist/cjs.js??ruleSet[1].rules[3].use[3]![1m./src/related-posts-query/style.scss[39m[22m 75 bytes [1m[33m[built][39m[22m [1m[33m[code generated][39m[22m
-webpack 5.106.2 compiled [1m[32msuccessfully[39m[22m in 966 ms
+webpack 5.106.2 compiled [1m[32msuccessfully[39m[22m in 3330 ms
 
-webpack 5.106.2 compiled [1m[32msuccessfully[39m[22m in 22 ms
+webpack 5.106.2 compiled [1m[32msuccessfully[39m[22m in 119 ms
 Block metadata PHP file generated at: build/blocks-manifest.php
 
-> @prc/related-posts@1.0.4 build:inspector-panel
+> @prc/related-posts@1.0.3 build:inspector-panel
 > wp-scripts build --source-path=includes/inspector-sidebar-panel/src --output-path=includes/inspector-sidebar-panel/build
 
 Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
@@ -50,4 +50,4 @@ built modules 41 KiB [1m[33m[built][39m[22m
   [1mexternal "ReactJSXRuntime"[39m[22m 42 bytes [1m[33m[built][39m[22m [1m[33m[code generated][39m[22m
   [1mexternal "emotionStyled"[39m[22m 42 bytes [1m[33m[built][39m[22m [1m[33m[code generated][39m[22m
   [1mexternal ["wp","components"][39m[22m 42 bytes [1m[33m[built][39m[22m [1m[33m[code generated][39m[22m
-webpack 5.106.2 compiled [1m[32msuccessfully[39m[22m in 1257 ms
+webpack 5.106.2 compiled [1m[32msuccessfully[39m[22m in 4826 ms
