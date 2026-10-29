@@ -174,6 +174,14 @@ class Plugin {
 		$this->loader->add_action( 'enqueue_block_editor_assets', $this, 'enqueue_assets' );
 		$this->loader->add_action( 'wpcom_vip_cache_pre_execute_purges', $this, 'clear_cache_on_purge' );
 		$this->loader->add_action( 'prc_platform_on_update', $this, 'clear_cache_on_update' );
+		$this->loader->add_action( 'transition_post_status', $this, 'flush_pools_on_status_change', 10, 3 );
+		$this->loader->add_action( 'delete_post', $this, 'flush_pools_on_delete', 10, 2 );
+		$this->loader->add_action( 'set_object_terms', $this, 'flush_pools_on_terms_set', 10, 6 );
+		$this->loader->add_action( 'deleted_term_relationships', $this, 'flush_pools_on_terms_removed', 10, 1 );
+		$this->loader->add_action( 'edited_term', $this, 'flush_pools_on_term_edit' );
+		$this->loader->add_action( 'added_post_meta', $this, 'flush_pools_on_primary_term_meta', 10, 3 );
+		$this->loader->add_action( 'updated_post_meta', $this, 'flush_pools_on_primary_term_meta', 10, 3 );
+		$this->loader->add_action( 'deleted_post_meta', $this, 'flush_pools_on_primary_term_meta', 10, 3 );
 
 		// Initialize the block.
 		wp_register_block_metadata_collection(
@@ -431,6 +439,112 @@ class Plugin {
 	public function clear_cache_on_update( $post ) {
 		$post_id = $post->ID;
 		wp_cache_delete( $post_id, self::$cache_key );
+	}
+
+	/**
+	 * Whether a post is currently in the candidate pools' scope.
+	 *
+	 * @param int|\WP_Post|null $post Post ID or object.
+	 * @return bool
+	 */
+	private static function is_published_candidate( $post ): bool {
+		$post = get_post( $post );
+		return $post instanceof \WP_Post
+			&& 'publish' === $post->post_status
+			&& in_array( $post->post_type, API::CANDIDATE_POST_TYPES, true );
+	}
+
+	/**
+	 * Flush candidate pools when a candidate is published, unpublished, or edited while published.
+	 *
+	 * @hook transition_post_status
+	 * @param string   $new_status New post status.
+	 * @param string   $old_status Old post status.
+	 * @param \WP_Post $post       Post object.
+	 * @return void
+	 */
+	public function flush_pools_on_status_change( $new_status, $old_status, $post ) {
+		if ( 'publish' !== $new_status && 'publish' !== $old_status ) {
+			return;
+		}
+		if ( ! in_array( $post->post_type, API::CANDIDATE_POST_TYPES, true ) ) {
+			return;
+		}
+		API::flush_candidate_pools();
+	}
+
+	/**
+	 * Flush candidate pools when a published candidate is deleted without going through the trash.
+	 *
+	 * @hook delete_post
+	 * @param int      $post_id Post ID.
+	 * @param \WP_Post $post    Post object.
+	 * @return void
+	 */
+	public function flush_pools_on_delete( $post_id, $post ) {
+		if ( self::is_published_candidate( $post ) ) {
+			API::flush_candidate_pools();
+		}
+	}
+
+	/**
+	 * Flush candidate pools when a published candidate's terms change.
+	 *
+	 * @hook set_object_terms
+	 * @param int    $object_id  Object ID.
+	 * @param array  $terms      Terms passed in.
+	 * @param array  $tt_ids     New term taxonomy IDs.
+	 * @param string $taxonomy   Taxonomy slug.
+	 * @param bool   $append     Whether terms were appended.
+	 * @param array  $old_tt_ids Previous term taxonomy IDs.
+	 * @return void
+	 */
+	public function flush_pools_on_terms_set( $object_id, $terms, $tt_ids, $taxonomy, $append, $old_tt_ids ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundInExtendedClassBeforeLastUsed,Generic.CodeAnalysis.UnusedFunctionParameter.FoundBeforeLastUsed
+		$new_ids = array_map( 'intval', (array) $tt_ids );
+		$old_ids = array_map( 'intval', (array) $old_tt_ids );
+		sort( $new_ids );
+		sort( $old_ids );
+		if ( $new_ids !== $old_ids && self::is_published_candidate( $object_id ) ) {
+			API::flush_candidate_pools();
+		}
+	}
+
+	/**
+	 * Flush candidate pools when terms are removed from a published candidate.
+	 *
+	 * @hook deleted_term_relationships
+	 * @param int $object_id Object ID.
+	 * @return void
+	 */
+	public function flush_pools_on_terms_removed( $object_id ) {
+		if ( self::is_published_candidate( $object_id ) ) {
+			API::flush_candidate_pools();
+		}
+	}
+
+	/**
+	 * Flush candidate pools when a term is edited, since renames and re-parenting change pool membership and ordering.
+	 *
+	 * @hook edited_term
+	 * @return void
+	 */
+	public function flush_pools_on_term_edit() {
+		API::flush_candidate_pools();
+	}
+
+	/**
+	 * Flush candidate pools when a published candidate's Schema SEO primary terms may have changed.
+	 *
+	 * @hook added_post_meta, updated_post_meta, deleted_post_meta
+	 * @param int|int[] $meta_id   Meta ID or IDs.
+	 * @param int       $object_id Post ID.
+	 * @param string    $meta_key  Meta key.
+	 * @return void
+	 */
+	public function flush_pools_on_primary_term_meta( $meta_id, $object_id, $meta_key ) {
+		if ( '_prc_seo_data' === $meta_key && self::is_published_candidate( $object_id ) ) {
+			API::flush_candidate_pools();
+		}
 	}
 
 	/**

@@ -22,6 +22,22 @@ class API {
 	const CANDIDATE_POOL_SIZE = 100;
 
 	/**
+	 * Object cache group for per-term candidate pools and their last_changed salt.
+	 *
+	 * Core's `posts` last_changed is bumped by every postmeta write on the network, so pools use their own salt.
+	 *
+	 * @var string
+	 */
+	const POOL_CACHE_GROUP = 'relatedPostsPool';
+
+	/**
+	 * Post types that can appear as related posts.
+	 *
+	 * @var string[]
+	 */
+	const CANDIDATE_POST_TYPES = array( 'post', 'short-read', 'feature', 'fact-sheet' );
+
+	/**
 	 * The post ID.
 	 *
 	 * @var int
@@ -73,10 +89,11 @@ class API {
 	 */
 	private function get_label( $post_id ) {
 		// Construct Label from post terms.
-		$terms = wp_get_object_terms( $post_id, 'formats', array( 'fields' => 'names' ) );
+		// The object term cache is ordered by name, like wp_get_object_terms(), and is primed by _prime_post_caches().
+		$terms = get_the_terms( $post_id, 'formats' );
 		$label = 'Report';
-		if ( ! is_wp_error( $terms ) && ! empty( $terms ) ) {
-			$label = array_shift( $terms );
+		if ( is_array( $terms ) && ! empty( $terms ) ) {
+			$label = reset( $terms )->name;
 		}
 		if ( null === $label ) {
 			$label = 'Report';
@@ -96,16 +113,116 @@ class API {
 	 * @return int[]
 	 */
 	public static function rank_by_primary_term( array $candidate_ids, int $primary_term_id, string $taxonomy ): array {
-		$same_primary = array();
-		$same_topic   = array();
+		return self::rank_flagged( self::flag_primary_term_matches( $candidate_ids, $primary_term_id, $taxonomy ) );
+	}
+
+	/**
+	 * Flag which candidates have the given term as their effective primary term.
+	 *
+	 * Same answer as comparing Primary_Term::get_id() per candidate, but the first-assigned-term fallback
+	 * runs as one query for all candidates instead of one per candidate.
+	 *
+	 * @param int[]  $candidate_ids   Candidate post IDs.
+	 * @param int    $primary_term_id The term ID to match.
+	 * @param string $taxonomy        Taxonomy slug.
+	 * @return array<int, bool> Candidate ID => whether it shares the primary term, in candidate order.
+	 */
+	public static function flag_primary_term_matches( array $candidate_ids, int $primary_term_id, string $taxonomy ): array {
+		$primary_ids = array();
 		foreach ( $candidate_ids as $candidate_id ) {
-			if ( Primary_Term::get_id( $candidate_id, $taxonomy ) === $primary_term_id ) {
-				$same_primary[] = $candidate_id;
-			} else {
-				$same_topic[] = $candidate_id;
+			$primary_ids[ (int) $candidate_id ] = Primary_Term::get_id( (int) $candidate_id, $taxonomy, false );
+		}
+
+		$without_primary = array_keys( $primary_ids, null, true );
+		if ( ! empty( $without_primary ) ) {
+			// Ordered by name, like the wp_get_post_terms() fallback in Primary_Term::get_id().
+			$terms = wp_get_object_terms(
+				$without_primary,
+				$taxonomy,
+				array(
+					'fields'                 => 'all_with_object_id',
+					'orderby'                => 'name',
+					'update_term_meta_cache' => false,
+				)
+			);
+			if ( ! is_wp_error( $terms ) ) {
+				foreach ( $terms as $term ) {
+					$primary_ids[ (int) $term->object_id ] ??= (int) $term->term_id;
+				}
 			}
 		}
-		return array_merge( $same_primary, $same_topic );
+
+		$flags = array();
+		foreach ( $primary_ids as $candidate_id => $candidate_primary_id ) {
+			$flags[ $candidate_id ] = $primary_term_id === $candidate_primary_id;
+		}
+		return $flags;
+	}
+
+	/**
+	 * Order flagged candidates so primary-term matches come first, keeping candidate order within each group.
+	 *
+	 * @param array<int, bool> $flags Candidate ID => whether it shares the primary term.
+	 * @return int[]
+	 */
+	private static function rank_flagged( array $flags ): array {
+		return array_merge( array_keys( $flags, true, true ), array_keys( $flags, false, true ) );
+	}
+
+	/**
+	 * Get the newest published candidates in a term, flagged by whether the term is also their primary term.
+	 *
+	 * The pool is the same for every post in the term, so it is cached per term and shared by all visitors.
+	 * It holds one extra candidate so the caller can drop itself and still have CANDIDATE_POOL_SIZE.
+	 *
+	 * @param int    $term_id  Term ID.
+	 * @param string $taxonomy Taxonomy slug.
+	 * @return array<int, bool> Candidate ID => same primary term, newest first.
+	 */
+	private static function get_candidate_pool( int $term_id, string $taxonomy ): array {
+		$cache_key = $taxonomy . ':' . $term_id . ':' . wp_cache_get_last_changed( self::POOL_CACHE_GROUP );
+		$pool      = wp_cache_get( $cache_key, self::POOL_CACHE_GROUP );
+		if ( is_array( $pool ) ) {
+			return $pool;
+		}
+
+		// Primary terms live in serialized Schema SEO meta, so match them in PHP over the newest posts in the term.
+		$query = new WP_Query(
+			array(
+				'post_type'              => self::CANDIDATE_POST_TYPES,
+				// Explicit so the shared pool never holds private posts a logged-in editor could read.
+				'post_status'            => 'publish',
+				'post_parent'            => 0,
+				'posts_per_page'         => self::CANDIDATE_POOL_SIZE + 1,
+				'fields'                 => 'ids',
+				'no_found_rows'          => true,
+				'update_post_meta_cache' => false,
+				'update_post_term_cache' => false,
+				'tax_query'              => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
+					array(
+						'taxonomy' => $taxonomy,
+						'field'    => 'term_id',
+						'terms'    => $term_id,
+					),
+				),
+			)
+		);
+
+		$candidate_ids = array_map( 'intval', $query->posts );
+		update_meta_cache( 'post', $candidate_ids );
+		$pool = self::flag_primary_term_matches( $candidate_ids, $term_id, $taxonomy );
+
+		wp_cache_set( $cache_key, $pool, self::POOL_CACHE_GROUP, 6 * HOUR_IN_SECONDS );
+		return $pool;
+	}
+
+	/**
+	 * Invalidate every cached candidate pool.
+	 *
+	 * @return void
+	 */
+	public static function flush_candidate_pools() {
+		wp_cache_set_last_changed( self::POOL_CACHE_GROUP );
 	}
 
 	/**
@@ -125,30 +242,15 @@ class API {
 			return array();
 		}
 
-		// Primary terms live in serialized Schema SEO meta, so match them in PHP over the newest posts in the term.
-		$query         = new WP_Query(
-			array(
-				'post_type'      => array( 'post', 'short-read', 'feature', 'fact-sheet' ),
-				'post_parent'    => 0,
-				'posts_per_page' => self::CANDIDATE_POOL_SIZE,
-				'post__not_in'   => array( $this->ID ), // phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.PostNotIn_post__not_in -- Single current post ID.
-				'no_found_rows'  => true,
-				'tax_query'      => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
-					array(
-						'taxonomy' => $taxonomy,
-						'field'    => 'term_id',
-						'terms'    => $primary_taxonomy_term->term_id,
-					),
-				),
-			)
-		);
-		$candidate_ids = wp_list_pluck( $query->posts, 'ID' );
+		$pool = self::get_candidate_pool( $primary_taxonomy_term->term_id, $taxonomy );
+		if ( array_key_exists( $this->ID, $pool ) ) {
+			unset( $pool[ $this->ID ] );
+		} else {
+			$pool = array_slice( $pool, 0, self::CANDIDATE_POOL_SIZE, true );
+		}
 
-		$ranked_ids = array_slice(
-			self::rank_by_primary_term( $candidate_ids, $primary_taxonomy_term->term_id, $taxonomy ),
-			0,
-			$posts_per_page
-		);
+		$ranked_ids = array_slice( self::rank_flagged( $pool ), 0, $posts_per_page );
+		_prime_post_caches( $ranked_ids );
 
 		return array_map(
 			function ( $post_id ) {
